@@ -21,7 +21,7 @@ crosses defined thresholds.
 ## Tech Stack
 
 - Bash Shell Scripting
-- AWS EC2 (Amazon Linux 2)
+- AWS EC2 ( Amazon Linux 2023)
 - AWS SNS for alerts
 - Cron for scheduling
 

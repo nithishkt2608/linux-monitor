@@ -32,8 +32,8 @@ crosses defined thresholds.
 ```bash
 git clone https://github.com/nithishkt2608/linux-monitor
 cd linux-monitor
-chmod +x monitor.sh
-./monitor.sh
+chmod +x system_monitor.sh
+./system_monitor.sh
 ```
 
 ---

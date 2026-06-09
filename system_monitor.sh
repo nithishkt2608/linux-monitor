@@ -1,55 +1,60 @@
 #!/bin/bash
 
-# Linux System Monitor
+# System Monitor with AWS SNS Alerts
 # Author: Nithishkannan
-# Description: Monitors CPU, Memory, Disk usage and alerts if thresholds are exceeded
+# MCS @ Illinois Tech
+
+SNS_TOPIC="arn:aws:sns:us-east-1:207495628549:system-monitor-alerts"
+LOG_FILE="/var/log/system_monitor.log"
+DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
 # Thresholds
 CPU_THRESHOLD=80
-MEM_THRESHOLD=80
-DISK_THRESHOLD=80
+MEM_THRESHOLD=75
+DISK_THRESHOLD=90
 
-echo "=============================="
-echo "   SYSTEM MONITOR REPORT"
-echo "   $(date)"
-echo "=============================="
+log_message() {
+    echo "[$DATE] $1" >> $LOG_FILE
+}
 
-# CPU Usage
-CPU_USAGE=$(top -l 1 | grep "CPU usage" | awk '{print $3}' | tr -d '%')
-echo ""
-echo "🖥  CPU Usage: ${CPU_USAGE}%"
+send_alert() {
+    aws sns publish \
+        --topic-arn "$SNS_TOPIC" \
+        --message "$1" \
+        --subject "🚨 System Alert - EC2 Monitor"
+}
+
+# CPU Check
+CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
+log_message "CPU Usage: ${CPU_USAGE}%"
 if (( $(echo "$CPU_USAGE > $CPU_THRESHOLD" | bc -l) )); then
-    echo "⚠️  ALERT: CPU usage is above ${CPU_THRESHOLD}%!"
+    send_alert "ALERT: CPU usage is ${CPU_USAGE}% - above threshold of ${CPU_THRESHOLD}%"
+    log_message "ALERT SENT: CPU above threshold"
 fi
 
-# Memory Usage
-MEM_TOTAL=$(sysctl hw.memsize | awk '{print $2}')
-MEM_USED=$(vm_stat | awk '/Pages active/ {print $3}' | tr -d '.')
-MEM_USED_MB=$((MEM_USED * 4096 / 1024 / 1024))
-MEM_TOTAL_MB=$((MEM_TOTAL / 1024 / 1024))
-MEM_PERCENT=$((MEM_USED_MB * 100 / MEM_TOTAL_MB))
-echo ""
-echo "💾  Memory Usage: ${MEM_USED_MB}MB / ${MEM_TOTAL_MB}MB (${MEM_PERCENT}%)"
-if [ "$MEM_PERCENT" -gt "$MEM_THRESHOLD" ]; then
-    echo "⚠️  ALERT: Memory usage is above ${MEM_THRESHOLD}%!"
+# Memory Check
+MEM_USAGE=$(free | awk '/Mem/{printf("%.0f"), $3/$2*100}')
+log_message "Memory Usage: ${MEM_USAGE}%"
+if [ "$MEM_USAGE" -gt "$MEM_THRESHOLD" ]; then
+    send_alert "ALERT: Memory usage is ${MEM_USAGE}% - above threshold of ${MEM_THRESHOLD}%"
+    log_message "ALERT SENT: Memory above threshold"
 fi
 
-# Disk Usage
+# Disk Check
 DISK_USAGE=$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')
-DISK_USED=$(df -h / | awk 'NR==2 {print $3}')
-DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
-echo ""
-echo "💿  Disk Usage: ${DISK_USED} / ${DISK_TOTAL} (${DISK_USAGE}%)"
+log_message "Disk Usage: ${DISK_USAGE}%"
 if [ "$DISK_USAGE" -gt "$DISK_THRESHOLD" ]; then
-    echo "⚠️  ALERT: Disk usage is above ${DISK_THRESHOLD}%!"
+    send_alert "ALERT: Disk usage is ${DISK_USAGE}% - above threshold of ${DISK_THRESHOLD}%"
+    log_message "ALERT SENT: Disk above threshold"
 fi
 
-# Top 5 Running Processes
-echo ""
-echo "📊  Top 5 Processes by CPU:"
-ps aux | sort -rk 3,3 | head -6 | tail -5 | awk '{printf "   %-10s %s%%\n", $11, $3}'
+# Services Check
+for service in sshd crond; do
+    if ! systemctl is-active --quiet $service; then
+        send_alert "ALERT: Service $service is DOWN on EC2!"
+        log_message "ALERT SENT: Service $service is down"
+    fi
+done
 
-echo ""
-echo "=============================="
-echo "   END OF REPORT"
-echo "=============================="
+log_message "Monitor check complete"
+echo "✅ Monitor check complete - $(date)"
